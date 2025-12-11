@@ -17,6 +17,15 @@ io.on('connection', socket => {
   socket.on('file', file => io.emit('file', file));
 
   socket.on('disconnect', () => console.log('Client disconnected'));
+  const peerConnection = new RTCPeerConnection({
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" }, // free STUN
+    {
+      urls: "turn:your-turn-server.com:3478",
+      username: "your-username",
+      credential: "your-password"
+    }
+  ]
 });
 
 server.listen(3000, () => console.log('Server running on http://localhost:3000'));
