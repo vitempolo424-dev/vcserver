@@ -1,22 +1,42 @@
+// server.js
 const express = require('express');
 const http = require('http');
-const socketIO = require('socket.io');
+const { Server } = require('socket.io');
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+const io = new Server(server);
 
+// Serve static files (index.html, main.js, etc.)
 app.use(express.static(path.join(__dirname)));
 
+// Socket.IO signaling
 io.on('connection', socket => {
-  console.log('New client connected');
+  console.log('a user connected:', socket.id);
 
-  socket.on('signal', data => io.emit('signal', data));
-  socket.on('chat', msg => io.emit('chat', msg));
-  socket.on('file', file => io.emit('file', file));
+  // Relay chat messages
+  socket.on('chat', msg => {
+    io.emit('chat', msg);
+  });
 
-  socket.on('disconnect', () => console.log('Client disconnected'));
+  // Relay WebRTC signaling data
+  socket.on('signal', data => {
+    socket.broadcast.emit('signal', data);
+  });
+
+  // Relay ICE candidates
+  socket.on('ice-candidate', candidate => {
+    socket.broadcast.emit('ice-candidate', candidate);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('user disconnected:', socket.id);
+  });
 });
 
-server.listen(3000, () => console.log('Server running on http://localhost:3000'));
+// Use Render’s injected PORT or default to 3000
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
