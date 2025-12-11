@@ -33,6 +33,7 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     console.log('user disconnected:', socket.id);
   });
+<<<<<<< HEAD
 });
 
 // Use Render’s injected PORT or default to 3000
@@ -40,3 +41,13 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+=======
+});
+
+// Use Render’s injected PORT or default to 3000
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+>>>>>>> 647489d47e178f75937b5a8ad49bafdac86dab24
