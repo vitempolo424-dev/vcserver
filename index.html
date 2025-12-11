@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Discord VC Chat</title>
+  <style>
+    body { background:#2c2f33; color:#fff; font-family:"Segoe UI",Arial,sans-serif; margin:0; padding:0; display:flex; flex-direction:column; height:100vh; }
+    header { background:#23272a; padding:12px; text-align:center; font-size:22px; font-weight:bold; border-bottom:1px solid #444; }
+    #userTiles { display:flex; flex-wrap:wrap; justify-content:center; background:#2c2f33; padding:10px; }
+    .tile { width:140px; height:140px; margin:8px; background:#202225; border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; overflow:hidden; }
+    .tile video { width:100%; height:100%; border-radius:12px; object-fit:cover; }
+    .avatar { width:100%; height:100%; border-radius:12px; background:#444; display:flex; align-items:center; justify-content:center; font-size:50px; }
+    .name { position:absolute; bottom:4px; left:4px; font-size:14px; background:#111; padding:2px 6px; border-radius:6px; }
+    .status { position:absolute; bottom:4px; right:4px; font-size:14px; background:#111; padding:2px 6px; border-radius:6px; }
+    #chatArea { flex:1; display:flex; flex-direction:column; background:#2c2f33; padding:12px; }
+    #messages { flex:1; overflow-y:auto; border:1px solid #444; padding:8px; margin-bottom:12px; border-radius:8px; background:#202225; }
+    #chatInput { display:flex; gap:6px; }
+    input,button { padding:10px; border:none; border-radius:8px; font-size:14px; }
+    input { flex:1; background:#40444b; color:#fff; }
+    button { background:#7289da; color:#fff; cursor:pointer; }
+    button:hover { background:#5b6eae; }
+    #toolbar { background:#23272a; padding:10px; display:flex; justify-content:center; gap:12px; }
+    #toolbar button { background:#7289da; }
+  </style>
+</head>
+<body>
+  <header>Discord-Style VC Chat</header>
+  <div id="userTiles"></div>
+  <div id="chatArea">
+    <div id="messages"></div>
+    <div id="chatInput">
+      <input id="msgBox" type="text" placeholder="Type a message...">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+  <div id="toolbar">
+    <button id="micBtn" onclick="toggleMic()">🎙️ Mic On</button>
+    <button id="camBtn" onclick="toggleCam()">📷 Camera On</button>
+    <button onclick="shareScreen()">🖥️ Share</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const pc = new RTCPeerConnection({ iceServers:[{urls:'stun:stun.l.google.com:19302'}] });
+    let localStream;
+    const username = prompt("Enter your name:");
+    const userTiles=document.getElementById('userTiles');
+
+    // Camera + mic
+    navigator.mediaDevices.getUserMedia({audio:true,video:true}).then(stream=>{
+      localStream=stream;
+      addTile(username, stream);
+      stream.getTracks().forEach(track=>pc.addTrack(track,stream));
+    });
+
+    pc.ontrack=event=>{ addTile("Friend", event.streams[0]); };
+
+    pc.onicecandidate=event=>{ if(event.candidate) socket.emit('signal',{candidate:event.candidate}); };
+    socket.on('signal',async data=>{
+      if(data.sdp){
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        if(data.sdp.type==='offer'){
+          const answer=await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('signal',{sdp:answer});
+        }
+      } else if(data.candidate){
+        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
+    });
+
+    async function start(){
+      const offer=await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('signal',{sdp:offer});
+    }
+    start();
+
+    // Chat
+    const messages=document.getElementById('messages');
+
+function sendMessage(){
+  const msg=document.getElementById('msgBox').value;
+  if(msg.trim()!==''){
+    socket.emit('chat', {user:username, text:msg});
+    addMessage(username+": "+msg);
+    document.getElementById('msgBox').value='';
+  }
+}
+
+// Allow sending messages with Enter key
+document.getElementById("msgBox").addEventListener("keydown", function(event) {
+  if (event.key === "Enter") {
+    event.preventDefault(); // prevent newline
+    sendMessage();
+  }
+});
+
+socket.on('chat',msg=>addMessage(msg.user+": "+msg.text));
+
+function addMessage(text){
+  const div=document.createElement('div');
+  div.textContent=text;
+  div.style.margin="4px 0";
+  messages.appendChild(div);
+  messages.scrollTop=messages.scrollHeight;
+}
+
+    // User tiles
+    function addTile(name, stream){
+      const tile=document.createElement('div');
+      tile.className='tile';
+      tile.dataset.user=name;
+
+      const video=document.createElement('video');
+      video.autoplay=true; video.playsInline=true; video.muted=(name===username);
+      video.srcObject=stream;
+      video.id="video-"+name;
+      tile.appendChild(video);
+
+      const label=document.createElement('div');
+      label.className='name';
+      label.textContent=name;
+      tile.appendChild(label);
+
+      const status=document.createElement('div');
+      status.className='status';
+      status.textContent="🎙️"; // default mic on
+      tile.appendChild(status);
+
+      userTiles.appendChild(tile);
+    }
+
+    // Toolbar controls
+    function toggleMic(){
+      if(!localStream) return;
+      const micBtn=document.getElementById('micBtn');
+      localStream.getAudioTracks().forEach(track=>{
+        track.enabled=!track.enabled;
+        micBtn.textContent=track.enabled ? "🎙️ Mic On" : "🔇 Mic Off";
+        const myTile=document.querySelector(`.tile[data-user='${username}'] .status`);
+        if(myTile) myTile.textContent=track.enabled ? "🎙️" : "🔇";
+      });
+    }
+
+    function toggleCam(){
+      const camBtn=document.getElementById('camBtn');
+      if(!localStream) return;
+
+      const videoTrack=localStream.getVideoTracks()[0];
+      const videoEl=document.getElementById("video-"+username);
+
+      if(videoTrack.enabled){
+        videoTrack.enabled=false;
+        videoEl.style.display="none";
+
+        let avatar=document.createElement("div");
+        avatar.id="avatar-"+username;
+        avatar.className="avatar";
+        avatar.textContent="🐱";
+        videoEl.parentNode.appendChild(avatar);
+
+        camBtn.textContent="🚫📷 Camera Off";
+      } else {
+        videoTrack.enabled=true;
+        videoEl.style.display="block";
+        const avatar=document.getElementById("avatar-"+username);
+        if(avatar) avatar.remove();
+        camBtn.textContent="📷 Camera On";
+      }
+    }
+
+    async function shareScreen(){
+      try{
+        const screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+        const screenTrack=screenStream.getVideoTracks()[0];
+        const senderVideo=pc.getSenders().find(s=>s.track&&s.track.kind==='video');
+        if(senderVideo && screenTrack) senderVideo.replaceTrack(screenTrack);
+
+        const audioTrack=screenStream.getAudioTracks()[0];
+        const senderAudio=pc.getSenders().find(s=>s.track&&s.track.kind==='audio');
+        if(senderAudio && audioTrack) senderAudio.replaceTrack(audioTrack);
+
+        const videoEl=document.getElementById("video-"+username);
+        videoEl.srcObject=screenStream;
+
+        screenTrack.onended=()=>{
+          const camTrack=localStream.getVideoTracks()[0];
+          if(senderVideo && camTrack) senderVideo.replaceTrack(camTrack);
+          videoEl.srcObject=localStream;
+        };
+      }catch(err){
+        console.error("Screen share failed:",err);
+      }
+    }
+  </script>
+</body>
+</html>
